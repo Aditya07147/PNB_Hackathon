@@ -329,15 +329,15 @@ risk_score (0–1000) = simple_score × 100
 
 | Dashboard | CBOM |
 |-----------|------|
-| ![Home](docs/home.png) | ![CBOM](docs/cbom.png) |
+| ![Home](docs/home.jpeg) | ![CBOM](docs/cbom.jpeg) |
 
 | PQC Posture | Cyber Rating |
 |-------------|-------------|
-| ![Posture](docs/posture.png) | ![Rating](docs/rating.png) |
+| ![Posture](docs/posture.jpeg) | ![Rating](docs/rating.jpeg) |
 
 | Asset Discovery | Reporting |
 |----------------|-----------|
-| ![Discovery](docs/discovery.png) | ![Reporting](docs/reporting.png) |
+| ![Discovery](docs/discovery.jpeg) | ![Reporting](docs/reporting.jpeg) |
 
 ---
 
