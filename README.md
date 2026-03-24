@@ -194,7 +194,7 @@ git clone https://github.com/yourusername/pnb-pqc.git
 cd pnb-pqc/backend
 
 # 2. Create and activate a virtual environment
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate        # Linux/macOS
 venv\Scripts\activate           # Windows
 
