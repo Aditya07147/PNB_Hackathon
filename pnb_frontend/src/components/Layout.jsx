@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Home, Shield, Search, FileText, Activity, Star, BarChart3 } from 'lucide-react';
+import pnbLogo from './pnb.png'; 
 
 const Layout = () => {
   const menuItems =[
@@ -51,7 +52,7 @@ const Layout = () => {
         {/* Header - Golden Gradient */}
         <header className="h-20 bg-gradient-to-r from-yellow-400 via-pnb-gold to-yellow-600 shadow-md flex items-center justify-between px-8 z-10">
           <div className="flex items-center space-x-4">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/c/cc/PNB_Logo.svg" alt="PNB Logo"  />
+             <img src={pnbLogo} alt="PNB Logo" className="h-9 w-auto object-"   />
             <h2 className="text-xl font-bold text-pnb-maroon hidden md:block">
               PSB HACKATHON SERIES 2026
             </h2>
