@@ -1,0 +1,10 @@
+# Backend
+pnb_backend/venv/
+pnb_backend/__pycache__/
+pnb_backend/*.db
+pnb_backend/*.pyc
+
+# Frontend
+pnb_frontend/node_modules/
+pnb_frontend/dist/
+.DS_Store

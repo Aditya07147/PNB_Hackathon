@@ -15,4 +15,5 @@ export const api = {
   
   // NEW DELETE ENDPOINT
   deleteScan: (id) => axios.delete(`${API_BASE_URL}/api/scan/${id}`), 
+  deleteAllScans: () => axios.delete(`${API_BASE_URL}/api/scans/all`),
 };

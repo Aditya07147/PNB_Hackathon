@@ -523,7 +523,16 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     db.delete(record)
     db.commit()
     return {"message": f"Scan ID {scan_id} deleted successfully."}
-
+@app.delete("/api/scans/all")
+def delete_all_scans(db: Session = Depends(get_db)):
+    """Deletes all scan records from the database."""
+    try:
+        num_deleted = db.query(database.AssetScan).delete()
+        db.commit()
+        return {"message": f"Successfully deleted {num_deleted} records."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HEALTH CHECK
