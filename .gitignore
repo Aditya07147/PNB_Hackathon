@@ -1,10 +1,10 @@
-# Backend
+# Python junk
+**/__pycache__/
+**/*.pyc
 pnb_backend/venv/
-pnb_backend/__pycache__/
 pnb_backend/*.db
-pnb_backend/*.pyc
 
-# Frontend
+# React junk
 pnb_frontend/node_modules/
 pnb_frontend/dist/
 .DS_Store

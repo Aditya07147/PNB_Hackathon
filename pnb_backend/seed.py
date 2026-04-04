@@ -63,7 +63,7 @@ async def scan_and_prepare(domain: str) -> database.AssetScan | None:
             print(f"  [!] {domain} → skipped: {scan_data['error']}", flush=True)
             return None
 
-        tier, simple_score, recommendations = evaluator.evaluate_risk(scan_data)
+        tier, simple_score, app_score, recommendations = evaluator.evaluate_risk(scan_data)
         risk_score = int(simple_score * 100)
         cbom = scanner.generate_cbom(scan_data)
 
@@ -82,6 +82,9 @@ async def scan_and_prepare(domain: str) -> database.AssetScan | None:
             signature_algo=scan_data.get("signature_algo"),
             asset_type=scan_data.get("asset_type", "Web App"),
             cert_status=scan_data.get("cert_status", "Valid"),
+            trust_status=scan_data.get("trust_status", "Valid"),
+            app_security_score=app_score,
+            security_headers=scan_data.get("security_headers", {}),
             risk_tier=tier,
             risk_score=risk_score,
             simple_score=simple_score,

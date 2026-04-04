@@ -44,6 +44,11 @@ class AssetScan(Base):
     recommendations = Column(JSON)
     cbom_json       = Column(JSON)
 
+    # NEW: Trust and application security
+    trust_status    = Column(String, default="Valid")     # Valid | Self-signed | Hostname-mismatch | Chain-invalid
+    app_security_score = Column(Float, default=0.0)       # 0–10
+    security_headers = Column(JSON)                       # Dict of security headers present
+
 # Create / migrate tables (adds new columns if they don't exist via SQLite ALTER TABLE)
 Base.metadata.create_all(bind=engine)
 
@@ -58,6 +63,9 @@ def migrate():
     new_cols = {
         "asset_type":  "VARCHAR DEFAULT 'Web App'",
         "cert_status": "VARCHAR DEFAULT 'Valid'",
+        "trust_status": "VARCHAR DEFAULT 'Valid'",
+        "app_security_score": "FLOAT DEFAULT 0.0",
+        "security_headers": "JSON",
     }
     with engine.connect() as conn:
         for col, definition in new_cols.items():

@@ -12,8 +12,9 @@ Score breakdown (0–10):
 
 Tier thresholds (risk_score = simple_score × 100):
   Elite-PQC  : PQC detected              → 10.0  (1000)
-  Standard   : score ≥ 5.0               → 500–999
-  Legacy     : score ≥ 2.0               → 200–499
+  Excellent  : score ≥ 8.5               → 850–999
+  Standard   : score ≥ 7.0               → 700–849
+  Legacy     : score ≥ 2.0               → 200–699
   Critical   : score < 2.0  or conn fail → 0–199
 """
 
@@ -49,13 +50,13 @@ def _cipher_score(cipher: str | None) -> tuple[float, list[str]]:
     ]
 
 
-def evaluate_risk(scan_data: dict) -> tuple[str, float, list[str]]:
-    """Returns (tier, simple_score 0–10, recommendations)."""
+def evaluate_risk(scan_data: dict) -> tuple[str, float, float, list[str]]:
+    """Returns (tier, combined_score 0–10, app_score 0–10, recommendations)."""
 
     # Connection failure
     if scan_data.get("error"):
         return (
-            "Critical", 0.0,
+            "Critical", 0.0, 0.0,
             [
                 "Connection failed — host may be behind firewall or VPN.",
                 "Verify the asset is publicly reachable on port 443.",
@@ -72,12 +73,37 @@ def evaluate_risk(scan_data: dict) -> tuple[str, float, list[str]]:
     ks     = scan_data.get("key_size") or 0
     pqc    = scan_data.get("pqc_detected", False)
     ke     = (scan_data.get("key_exchange") or "").upper()
+    cert_status = (scan_data.get("cert_status") or "Valid").strip()
+    trust_status = (scan_data.get("trust_status") or "Valid").strip()
+
+    # ── Certificate health ──────────────────────────────────────────────────
+    if cert_status == "Expired":
+        return (
+            "Critical", 0.0, 0.0,
+            [
+                "Certificate is expired. Replace it immediately.",
+                "Expired certificates break trust and should not score higher.",
+                "Verify the TLS trust chain and use a valid certificate authority.",
+            ]
+        )
+
+    # ── Certificate trust validation ────────────────────────────────────────
+    if trust_status in ("Self-signed", "Hostname-mismatch", "Chain-invalid"):
+        return (
+            "Critical", 0.0, 0.0,
+            [
+                f"Certificate trust failure: {trust_status}.",
+                "This indicates a fundamental security issue that cannot be scored highly.",
+                "Replace with a properly signed certificate from a trusted CA.",
+                "Ensure the certificate matches the hostname exactly.",
+            ]
+        )
 
     # ── PQC detected → Elite, max score ──────────────────────────────────────
     if pqc:
         method = scan_data.get("pqc_method", "Unknown")
         return (
-            "Elite-PQC", 10.0,
+            "Elite-PQC", 10.0, 10.0,
             [
                 f"Asset is Quantum-Safe via {method}.",
                 "Awarded 'PQC-Ready' label per NIST FIPS 203/204/205.",
@@ -139,7 +165,50 @@ def evaluate_risk(scan_data: dict) -> tuple[str, float, list[str]]:
             "to protect past sessions from future decryption."
         )
 
+    if cert_status == "Expiring":
+        score = max(score - 1.5, 0.0)
+        rec.append(
+            "Certificate is expiring soon. Renew it before expiration to avoid a trust failure."
+        )
+
     score = round(min(score, 10.0), 1)
+
+    # ── Application security score (0–10) ────────────────────────────────────
+    app_score = 0.0
+    security_headers = scan_data.get("security_headers", {})
+
+    # Security headers (up to 6 points)
+    if security_headers.get("Strict-Transport-Security"):
+        app_score += 1.5  # HSTS prevents downgrade attacks
+    if security_headers.get("Content-Security-Policy"):
+        app_score += 1.5  # CSP prevents XSS
+    if security_headers.get("X-Frame-Options"):
+        app_score += 1.0  # Prevents clickjacking
+    if security_headers.get("X-Content-Type-Options"):
+        app_score += 1.0  # Prevents MIME sniffing
+    if security_headers.get("Referrer-Policy"):
+        app_score += 0.5  # Controls referrer leakage
+    if security_headers.get("Permissions-Policy"):
+        app_score += 0.5  # Restricts browser features
+
+    # HTTP status and content type checks
+    if scan_data.get("http_status") == 200:
+        app_score += 1.0  # Successful response
+    else:
+        rec.append("HTTP response indicates potential issues.")
+
+    if "text/html" in (scan_data.get("content_type") or "").lower():
+        app_score += 0.5  # Web application detected
+
+    # Penalize for HTTP errors
+    if scan_data.get("http_error"):
+        app_score = max(app_score - 2.0, 0.0)
+        rec.append(f"HTTP request failed: {scan_data['http_error']}")
+
+    app_score = round(min(app_score, 10.0), 1)
+
+    # ── Combined score (weighted: 60% TLS, 40% Application) ─────────────────
+    combined_score = round((score * 0.6) + (app_score * 0.4), 1)
 
     # ── PQC migration recommendations (always for non-PQC assets) ────────────
     rec.append(
@@ -151,12 +220,14 @@ def evaluate_risk(scan_data: dict) -> tuple[str, float, list[str]]:
         "during migration for backward compatibility."
     )
 
-    # ── Tier ──────────────────────────────────────────────────────────────────
-    if score >= 5.0:
+    # ── Tier based on combined score ──────────────────────────────────────────
+    if combined_score >= 8.5:
+        tier = "Excellent"
+    elif combined_score >= 7.0:
         tier = "Standard"
-    elif score >= 2.0:
+    elif combined_score >= 2.0:
         tier = "Legacy"
     else:
         tier = "Critical"
 
-    return tier, score, rec
+    return tier, combined_score, app_score, rec

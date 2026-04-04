@@ -10,6 +10,7 @@ import subprocess
 import re
 import json
 import datetime
+import logging
 
 try:
     from cryptography import x509 as cx509
@@ -17,6 +18,15 @@ try:
     HAS_CRYPTOGRAPHY = True
 except ImportError:
     HAS_CRYPTOGRAPHY = False
+
+try:
+    import pqc_validator
+    HAS_PQC_VALIDATOR = True
+except ImportError:
+    HAS_PQC_VALIDATOR = False
+    logging.warning("pqc_validator module not found; falling back to keyword-based PQC detection")
+
+logger = logging.getLogger(__name__)
 
 # ── PQC keywords (NIST FIPS 203/204/205 + drafts) ────────────────────────────
 PQC_KEYWORDS = [
@@ -92,6 +102,65 @@ def _scan_ssl_module(hostname: str) -> dict:
         result["error"] = str(e)
 
     return result
+
+
+def _validate_certificate_trust(hostname: str) -> str:
+    """
+    Attempts to validate the certificate trust chain and hostname.
+    Returns trust status: Valid, Self-signed, Hostname-mismatch, Chain-invalid, Unknown
+    """
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+
+        with socket.create_connection((hostname, 443), timeout=10) as raw:
+            with ctx.wrap_socket(raw, server_hostname=hostname) as tls:
+                # If we get here, cert is valid
+                return "Valid"
+    except ssl.SSLCertVerificationError as e:
+        error_str = str(e).lower()
+        if "self signed" in error_str or "self-signed" in error_str:
+            return "Self-signed"
+        elif "hostname" in error_str or "doesn't match" in error_str:
+            return "Hostname-mismatch"
+        else:
+            return "Chain-invalid"
+    except Exception:
+        return "Unknown"
+
+
+def _scan_http_headers(hostname: str) -> dict:
+    """
+    Makes an HTTPS request to check for security headers.
+    Returns dict of header presence and values.
+    """
+    import urllib.request
+    import urllib.error
+
+    headers = {}
+    try:
+        req = urllib.request.Request(f"https://{hostname}", headers={"User-Agent": "PNB-Scanner/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            # Check for key security headers
+            security_headers = {
+                "Strict-Transport-Security": response.headers.get("Strict-Transport-Security"),
+                "Content-Security-Policy": response.headers.get("Content-Security-Policy"),
+                "X-Frame-Options": response.headers.get("X-Frame-Options"),
+                "X-Content-Type-Options": response.headers.get("X-Content-Type-Options"),
+                "Referrer-Policy": response.headers.get("Referrer-Policy"),
+                "Permissions-Policy": response.headers.get("Permissions-Policy"),
+            }
+            headers["security_headers"] = {k: v for k, v in security_headers.items() if v is not None}
+            headers["http_status"] = response.status
+            headers["content_type"] = response.headers.get("Content-Type", "")
+    except urllib.error.HTTPError as e:
+        headers["http_error"] = f"HTTP {e.code}: {e.reason}"
+    except Exception as e:
+        headers["http_error"] = str(e)
+
+    return headers
+
 
 def _parse_der_cert(der: bytes) -> dict:
     """Deep parse using the cryptography library."""
@@ -189,6 +258,22 @@ def _scan_openssl_kex(hostname: str) -> dict:
 
 # ── PQC detection ─────────────────────────────────────────────────────────────
 def _detect_pqc(data: dict) -> tuple[bool, str]:
+    """
+    Detect PQC algorithms in TLS handshake using cryptographic validation.
+    Uses pqc_validator module if available; falls back to keyword matching.
+    """
+    if not data:
+        return False, "None"
+    
+    # Try validated detection via pqc_validator module
+    if HAS_PQC_VALIDATOR:
+        try:
+            is_pqc, method = pqc_validator.detect_pqc(data)
+            return is_pqc, method if method else "None"
+        except Exception as e:
+            logger.warning(f"pqc_validator.detect_pqc failed: {e}; falling back to keyword matching")
+    
+    # Fallback: keyword-based detection (backward compatible)
     haystack = " ".join([
         data.get("key_exchange", "") or "",
         data.get("cipher_suite",  "") or "",
@@ -197,7 +282,7 @@ def _detect_pqc(data: dict) -> tuple[bool, str]:
     ]).lower()
     for kw in PQC_KEYWORDS:
         if kw in haystack:
-            return True, f"Detected '{kw}' in TLS handshake"
+            return True, f"Detected '{kw}' in TLS handshake (keyword-based fallback)"
     return False, "None"
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -235,6 +320,13 @@ def scan_target(hostname: str) -> dict:
 
     # PQC
     data["pqc_detected"], data["pqc_method"] = _detect_pqc(data)
+
+    # Certificate trust validation
+    data["trust_status"] = _validate_certificate_trust(hostname)
+
+    # HTTP security headers
+    http_result = _scan_http_headers(hostname)
+    data.update(http_result)
 
     # Ensure cert_status default
     if not data.get("cert_status"):
